@@ -55,10 +55,9 @@ class FeatureEngineer:
         df['is_night'] = df['hour'].between(0, 5).astype(int)
         df['is_business_hours'] = df['hour'].between(9, 17).astype(int)
         
-        # TODO: Adicionar mais features temporais
-        # - time_since_last_transaction (por usuário)
-        # - transactions_last_1h, 24h, 7d
-        # - velocity features
+        # Time since last transaction per user
+        df['time_since_last_tx'] = df.groupby('sender_id')['datetime'].diff().dt.total_seconds() / 3600
+        df['time_since_last_tx'] = df['time_since_last_tx'].fillna(999)
         
         return df
     
@@ -85,26 +84,26 @@ class FeatureEngineer:
                             'user_unique_recipients', 'user_common_tx_type']
         df = df.merge(user_agg, on='sender_id', how='left')
         
-        # Simple rolling windows by sender
-        df = df.sort_values(['sender_id', 'datetime'])
+        # Velocity features using expanding windows
+        df = df.sort_values(['sender_id', 'datetime']).reset_index(drop=True)
         
         for window_hours in self.temporal_windows:
-            # Count transactions in last N hours for each sender
             df[f'tx_count_{window_hours}h'] = 0
             df[f'amount_sum_{window_hours}h'] = 0.0
             
+            # Vectorized calculation for each sender
             for sender in df['sender_id'].unique():
                 mask = df['sender_id'] == sender
-                sender_df = df[mask].copy()
+                sender_indices = df[mask].index
                 
-                for idx in sender_df.index:
+                for idx in sender_indices:
                     current_time = df.loc[idx, 'datetime']
                     window_start = current_time - pd.Timedelta(hours=window_hours)
                     
-                    # Count previous transactions in window
-                    prev_mask = (sender_df['datetime'] >= window_start) & (sender_df['datetime'] < current_time)
-                    df.loc[idx, f'tx_count_{window_hours}h'] = prev_mask.sum()
-                    df.loc[idx, f'amount_sum_{window_hours}h'] = sender_df.loc[prev_mask, 'amount'].sum()
+                    # Count transactions in window (excluding current)
+                    window_mask = mask & (df['datetime'] >= window_start) & (df['datetime'] < current_time)
+                    df.loc[idx, f'tx_count_{window_hours}h'] = window_mask.sum()
+                    df.loc[idx, f'amount_sum_{window_hours}h'] = df.loc[window_mask, 'amount'].sum()
         
         return df
     
@@ -182,7 +181,7 @@ class FeatureEngineer:
         
         # Default values if no location data
         df['no_recent_gps'] = 0
-        df['gps_gap_hours'] = 0
+        df['gps_gap_hours'] = 0.0
         
         if locations_df is not None and len(locations_df) > 0:
             try:

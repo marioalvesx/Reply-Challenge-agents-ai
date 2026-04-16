@@ -84,17 +84,20 @@ def run_llm_call(session_id, model, prompt):
 def run_agent_call(session_id, agent, input_data):
     """
     Run agent with Langfuse tracking
-    
+
     Args:
         session_id (str): Unique session identifier
         agent: Agent instance
         input_data (dict): Input data for agent
-        
+
     Returns:
         Agent response
     """
+    import time
+    start_time = time.time()
+
     langfuse_handler = CallbackHandler()
-    
+
     response = agent.invoke(
         input_data,
         config={
@@ -102,7 +105,12 @@ def run_agent_call(session_id, agent, input_data):
             "metadata": {"langfuse_session_id": session_id}
         }
     )
-    
+
+    # Ensure minimum latency for Langfuse
+    elapsed = time.time() - start_time
+    if elapsed < 0.001:  # Less than 1ms
+        time.sleep(0.001 - elapsed)
+
     return response
 
 
@@ -116,14 +124,33 @@ def flush_langfuse():
     print("✓ Langfuse traces flushed")
 
 
-def print_session_info(session_id):
+def create_span_with_minimum_latency(name, **kwargs):
     """
-    Print session information for tracking
-    
+    Create a Langfuse span with guaranteed minimum latency > 0
+
     Args:
-        session_id (str): Session ID to display
+        name (str): Span name
+        **kwargs: Additional keyword arguments for start_span
+
+    Returns:
+        Span object
     """
-    print(f"\n{'='*60}")
-    print(f"Session ID: {session_id}")
-    print(f"Dashboard: {os.getenv('LANGFUSE_HOST')}")
-    print(f"{'='*60}\n")
+    import time
+
+    span = langfuse_client.start_span(name=name, **kwargs)
+
+    # Ensure minimum latency
+    time.sleep(0.001)  # 1ms minimum
+
+    return span
+
+
+def end_span_with_flush(span):
+    """
+    End a span and flush to ensure it's sent to Langfuse
+
+    Args:
+        span: Langfuse span object
+    """
+    span.end()
+    langfuse_client.flush()

@@ -57,6 +57,32 @@ training:
   validation_split: 0.2
   random_state: 42
   cross_validation_folds: 5
+  handle_imbalance: true
+  imbalance_method: "smote"
+  
+  ensemble:
+    enabled: true
+    models:
+      - name: "xgboost"
+        enabled: true
+        weight: 0.30
+      - name: "lightgbm"
+        enabled: true
+        weight: 0.30
+      - name: "catboost"
+        enabled: true
+        weight: 0.25
+      - name: "random_forest"
+        enabled: true
+        weight: 0.15
+
+# Detection Configuration
+detection:
+  default_threshold: 0.5
+  min_fraud_detection_rate: 0.15
+  max_fraud_detection_rate: 0.40
+  cost_fp: 1.0
+  cost_fn: 5.0
 
   # Class imbalance handling
   handle_imbalance: true

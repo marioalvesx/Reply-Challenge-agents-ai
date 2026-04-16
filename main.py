@@ -213,15 +213,6 @@ def predict_mode(level, input_file, output_file, config):
     print(f"Output saved to {output_path}")
     
     return True
-    print("Next steps:")
-    print("  1. Load trained models from models/trained/")
-    print("  2. Load evaluation Transactions.csv + auxiliary datasets")
-    print("  3. Apply same feature engineering as training")
-    print("  4. Generate predictions with ensemble")
-    print("  5. Apply optimized threshold")
-    print("  6. Write Transaction IDs to output file (ASCII, one per line)")
-    
-    return True
 
 
 def validate_mode(input_file, total_transactions=None):
