@@ -42,10 +42,7 @@ env/
 .env.local
 
 # Data files (large datasets)
-data/raw/*.csv
 data/processed/*.parquet
-data/outputs/*.txt
-*.csv
 *.parquet
 
 # Models

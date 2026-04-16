@@ -72,17 +72,41 @@ class FeatureEngineer:
         Returns:
             DataFrame with aggregation features
         """
-        # TODO: Implementar agregações por usuário
-        # Por cada janela temporal (1h, 24h, 7d, 30d):
-        # - count_transactions
-        # - sum_amount
-        # - mean_amount
-        # - std_amount
-        # - max_amount
-        # - unique_recipients
-        # - unique_merchants
+        df = transactions_df.copy()
         
-        pass
+        # User-level lifetime aggregations
+        user_agg = df.groupby('sender_id').agg({
+            'amount': ['count', 'sum', 'mean', 'std', 'min', 'max'],
+            'recipient_id': 'nunique',
+            'transaction_type': lambda x: x.mode()[0] if len(x) > 0 else None
+        }).reset_index()
+        user_agg.columns = ['sender_id', 'user_tx_count', 'user_amount_sum', 'user_amount_mean', 
+                            'user_amount_std', 'user_amount_min', 'user_amount_max', 
+                            'user_unique_recipients', 'user_common_tx_type']
+        df = df.merge(user_agg, on='sender_id', how='left')
+        
+        # Simple rolling windows by sender
+        df = df.sort_values(['sender_id', 'datetime'])
+        
+        for window_hours in self.temporal_windows:
+            # Count transactions in last N hours for each sender
+            df[f'tx_count_{window_hours}h'] = 0
+            df[f'amount_sum_{window_hours}h'] = 0.0
+            
+            for sender in df['sender_id'].unique():
+                mask = df['sender_id'] == sender
+                sender_df = df[mask].copy()
+                
+                for idx in sender_df.index:
+                    current_time = df.loc[idx, 'datetime']
+                    window_start = current_time - pd.Timedelta(hours=window_hours)
+                    
+                    # Count previous transactions in window
+                    prev_mask = (sender_df['datetime'] >= window_start) & (sender_df['datetime'] < current_time)
+                    df.loc[idx, f'tx_count_{window_hours}h'] = prev_mask.sum()
+                    df.loc[idx, f'amount_sum_{window_hours}h'] = sender_df.loc[prev_mask, 'amount'].sum()
+        
+        return df
     
     def create_user_deviation_features(self, transactions_df: pd.DataFrame, 
                                        user_profiles: Dict[str, Any]) -> pd.DataFrame:
@@ -96,14 +120,23 @@ class FeatureEngineer:
         Returns:
             DataFrame with deviation features
         """
-        # TODO: Implementar features de desvio
-        # - amount_zscore: (amount - user_mean) / user_std
-        # - amount_ratio_to_avg: amount / user_avg_amount
-        # - is_unusual_hour
-        # - is_unusual_merchant
-        # - is_unusual_amount
+        df = transactions_df.copy()
         
-        pass
+        # Amount deviation from user mean
+        df['amount_zscore'] = (df['amount'] - df['user_amount_mean']) / (df['user_amount_std'] + 1e-6)
+        df['amount_ratio_to_avg'] = df['amount'] / (df['user_amount_mean'] + 1e-6)
+        df['is_unusual_amount'] = (np.abs(df['amount_zscore']) > 2).astype(int)
+        
+        # User common hour detection
+        user_hour_mode = df.groupby('sender_id')['hour'].transform(lambda x: x.mode()[0] if len(x) > 0 else 12)
+        df['hour_deviation'] = np.abs(df['hour'] - user_hour_mode)
+        df['is_unusual_hour'] = (df['hour_deviation'] > 6).astype(int)
+        
+        # Recipient frequency
+        df['is_new_recipient'] = df.groupby(['sender_id', 'recipient_id']).cumcount()
+        df['is_new_recipient'] = (df['is_new_recipient'] == 0).astype(int)
+        
+        return df
     
     def create_network_features(self, transactions_df: pd.DataFrame, 
                                 graph_metrics: Dict[str, Any]) -> pd.DataFrame:
@@ -139,13 +172,43 @@ class FeatureEngineer:
         Returns:
             DataFrame with geospatial features
         """
-        # TODO: Implementar features geoespaciais
-        # - distance_from_last_gps_km
-        # - is_impossible_location (> 50km de GPS recente)
-        # - travel_speed_km_h
-        # - is_usual_area
+        df = transactions_df.copy()
         
-        pass
+        # Default values if no location data
+        df['no_recent_gps'] = 0
+        df['gps_gap_hours'] = 0
+        
+        if locations_df is not None and len(locations_df) > 0:
+            try:
+                # Parse biotag from locations
+                locations_df['datetime'] = pd.to_datetime(locations_df['timestamp'])
+                
+                # For each transaction, find if there's recent GPS data
+                for idx in df.index:
+                    sender = df.loc[idx, 'sender_id']
+                    tx_time = df.loc[idx, 'datetime']
+                    
+                    # Get sender's GPS points
+                    user_locs = locations_df[locations_df['biotag'] == sender]
+                    if len(user_locs) == 0:
+                        df.loc[idx, 'no_recent_gps'] = 1
+                        df.loc[idx, 'gps_gap_hours'] = 999
+                        continue
+                    
+                    # Find most recent GPS before transaction
+                    prior_locs = user_locs[user_locs['datetime'] <= tx_time]
+                    if len(prior_locs) == 0:
+                        df.loc[idx, 'no_recent_gps'] = 1
+                        df.loc[idx, 'gps_gap_hours'] = 999
+                    else:
+                        nearest = prior_locs.sort_values('datetime').iloc[-1]
+                        hours_diff = (tx_time - nearest['datetime']).total_seconds() / 3600
+                        df.loc[idx, 'gps_gap_hours'] = hours_diff
+                        df.loc[idx, 'no_recent_gps'] = int(hours_diff > 24)
+            except Exception as e:
+                print(f"  Warning: GPS feature extraction failed: {e}")
+        
+        return df
     
     def create_all_features(self, transactions_df: pd.DataFrame,
                            locations_df: pd.DataFrame = None,
@@ -169,14 +232,21 @@ class FeatureEngineer:
         
         # Start with temporal features
         df = self.create_temporal_features(transactions_df)
+        print(f"  ✓ Temporal features: {len(df.columns)} columns")
         
-        # TODO: Adicionar todas as outras features
-        # - Aggregation features
-        # - User deviation features
-        # - Network features
-        # - Geospatial features
-        # - NLP features (if communication data available)
+        # Aggregation features
+        df = self.create_aggregation_features(df)
+        print(f"  ✓ Aggregation features: {len(df.columns)} columns")
         
-        print(f"✓ Created {len(df.columns)} features")
+        # User deviation features
+        df = self.create_user_deviation_features(df, users_df)
+        print(f"  ✓ User deviation features: {len(df.columns)} columns")
+        
+        # Geospatial features
+        if locations_df is not None:
+            df = self.create_geospatial_features(df, locations_df)
+            print(f"  ✓ Geospatial features: {len(df.columns)} columns")
+        
+        print(f"✓ Total features: {len(df.columns)}\\n")
         
         return df

@@ -33,22 +33,82 @@ def train_mode(level, input_file, config):
     print(f"\n{'='*60}")
     print(f"TRAINING MODE - Level {level}")
     print(f"{'='*60}")
-    print(f"Input file: {input_file}")
+    print(f"Input file: {input_file}\n")
     
-    # TODO: Implementar training pipeline
-    # 1. Carregar dados (Transactions + auxiliares)
-    # 2. Feature engineering
-    # 3. Treinar modelos
-    # 4. Salvar modelos para usar em predict
+    import pandas as pd
+    import json
+    from pathlib import Path
+    from features.engineering import FeatureEngineer
+    from models.ensemble import FraudEnsemble
+    from utils.metrics import find_optimal_threshold
     
-    print("\n⚠️  Training pipeline not yet implemented")
-    print("Next steps:")
-    print("  1. Load Transactions.csv + auxiliary datasets")
-    print("  2. Feature engineering (temporal, network, geo, etc.)")
-    print("  3. Train ensemble of models (XGBoost, LightGBM, CatBoost)")
-    print("  4. Cross-validation with temporal splits")
-    print("  5. Optimize threshold based on asymmetric costs")
-    print("  6. Save trained models to models/trained/")
+    # Load data
+    print("Loading data...")
+    transactions = pd.read_csv(input_file)
+    print(f"  ✓ Transactions: {len(transactions)} rows")
+    
+    # Load auxiliary data
+    data_dir = Path(input_file).parent
+    locations = None
+    users = None
+    
+    if (data_dir / 'locations.json').exists():
+        with open(data_dir / 'locations.json') as f:
+            locations = pd.DataFrame(json.load(f))
+        print(f"  ✓ Locations: {len(locations)} rows")
+    
+    if (data_dir / 'users.json').exists():
+        with open(data_dir / 'users.json') as f:
+            users = pd.DataFrame(json.load(f))
+        print(f"  ✓ Users: {len(users)} rows")
+    
+    print()
+    
+    # Feature engineering
+    engineer = FeatureEngineer(config)
+    features_df = engineer.create_all_features(
+        transactions,
+        locations_df=locations,
+        users_df=users
+    )
+    
+    # Check if labels exist
+    if 'is_fraud' in features_df.columns:
+        # Supervised learning
+        print("Training supervised model (labels found)...\n")
+        
+        # Prepare features and labels
+        exclude_cols = [
+            'transaction_id', 'is_fraud', 'timestamp', 'datetime', 'sender_id', 'recipient_id',
+            'transaction_type', 'location', 'payment_method', 'sender_iban', 'recipient_iban',
+            'balance_after', 'description', 'sender_country', 'recipient_country'
+        ]
+        feature_cols = [c for c in features_df.columns if c not in exclude_cols]
+        
+        X = features_df[feature_cols].fillna(0)
+        y = features_df['is_fraud']
+        
+        print(f"Training with {len(feature_cols)} features on {len(X)} samples")
+        print(f"Fraud rate: {y.mean():.2%}\n")
+        
+        # Train ensemble
+        ensemble = FraudEnsemble(config)
+        metrics = ensemble.train(X, y)
+        
+        # Find optimal threshold
+        y_pred_proba = ensemble.predict_proba(X)
+        optimal_threshold = find_optimal_threshold(y, y_pred_proba, cost_fp=1, cost_fn=5)
+        print(f"\nOptimal threshold: {optimal_threshold:.3f}")
+        
+        # Save models
+        models_dir = Path('models/trained')
+        models_dir.mkdir(parents=True, exist_ok=True)
+        ensemble.save(models_dir / f'level{level}_ensemble.pkl')
+        print(f"\n✓ Models saved to {models_dir}/level{level}_ensemble.pkl")
+    else:
+        # Unsupervised learning
+        print("⚠️  No labels found - using unsupervised anomaly detection")
+        print("   Feature engineering complete. Use predict mode to detect fraud.\n")
     
     return True
 
@@ -67,17 +127,92 @@ def predict_mode(level, input_file, output_file, config):
     print(f"PREDICTION MODE - Level {level}")
     print(f"{'='*60}")
     print(f"Input file:  {input_file}")
-    print(f"Output file: {output_file}")
+    print(f"Output file: {output_file}\n")
     
-    # TODO: Implementar prediction pipeline
-    # 1. Carregar modelos treinados
-    # 2. Carregar dados de avaliação
-    # 3. Feature engineering (mesmas features do treino)
-    # 4. Gerar predições
-    # 5. Aplicar threshold otimizado
-    # 6. Salvar Transaction IDs suspeitos no formato correto
+    import pandas as pd
+    import json
+    from pathlib import Path
+    from features.engineering import FeatureEngineer
+    from models.unsupervised_detector import UnsupervisedFraudDetector
     
-    print("\n⚠️  Prediction pipeline not yet implemented")
+    # Check if trained model exists (supervised)
+    models_path = Path(f'models/trained/level{level}_ensemble.pkl')
+    use_supervised = models_path.exists()
+    
+    if use_supervised:
+        from models.ensemble import FraudEnsemble
+        ensemble = FraudEnsemble(config)
+        ensemble.load(models_path)
+        print(f"✓ Loaded supervised model from {models_path}\n")
+    else:
+        print("⚠️  No trained model found - using unsupervised detection\n")
+    
+    # Load data
+    print("\nLoading data...")
+    transactions = pd.read_csv(input_file)
+    print(f"  ✓ Transactions: {len(transactions)} rows")
+    
+    # Load auxiliary data
+    data_dir = Path(input_file).parent
+    locations = None
+    users = None
+    
+    if (data_dir / 'locations.json').exists():
+        with open(data_dir / 'locations.json') as f:
+            locations = pd.DataFrame(json.load(f))
+        print(f"  ✓ Locations: {len(locations)} rows")
+    
+    if (data_dir / 'users.json').exists():
+        with open(data_dir / 'users.json') as f:
+            users = pd.DataFrame(json.load(f))
+        print(f"  ✓ Users: {len(users)} rows")
+    
+    print()
+    
+    # Feature engineering (same as training)
+    engineer = FeatureEngineer(config)
+    features_df = engineer.create_all_features(
+        transactions,
+        locations_df=locations,
+        users_df=users
+    )
+    
+    # Prepare features (same columns as training)
+    exclude_cols = [
+        'transaction_id', 'is_fraud', 'timestamp', 'datetime', 'sender_id', 'recipient_id',
+        'transaction_type', 'location', 'payment_method', 'sender_iban', 'recipient_iban',
+        'balance_after', 'description', 'sender_country', 'recipient_country'
+    ]
+    feature_cols = [c for c in features_df.columns if c not in exclude_cols]
+    X = features_df[feature_cols].fillna(0)
+    
+    # Generate predictions
+    
+    if use_supervised:
+        # Supervised prediction
+        y_pred_proba = ensemble.predict_proba(X)
+        threshold = config.get('detection', {}).get('default_threshold', 0.5)
+        y_pred = (y_pred_proba >= threshold).astype(int)
+        fraud_ids = features_df[y_pred == 1]['transaction_id'].tolist()
+    else:
+        # Unsupervised detection
+        detector = UnsupervisedFraudDetector(config)
+        results = detector.detect_fraud(features_df)
+        fraud_ids = results[results['is_fraud'] == 1]['transaction_id'].tolist()
+    
+    print(f"\n✓ Detected {len(fraud_ids)} potential frauds ({len(fraud_ids)/len(features_df):.1%})")
+    
+    # Save output in required format (one ID per line, ASCII)
+    output_path = Path(output_file)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    
+    with open(output_path, 'w', encoding='ascii') as f:
+        for txn_id in fraud_ids:
+            f.write(f"{txn_id}\n")
+    
+    print(f"✓ Output saved to {output_path}")
+    
+    return True
     print("Next steps:")
     print("  1. Load trained models from models/trained/")
     print("  2. Load evaluation Transactions.csv + auxiliary datasets")

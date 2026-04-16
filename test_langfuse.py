@@ -42,11 +42,11 @@ def test_langfuse_tracking():
         model = ChatOpenAI(
             api_key=os.getenv("OPENROUTER_API_KEY"),
             base_url="https://openrouter.ai/api/v1",
-            model="claude-sonnet-4.5",
+            model="openai/gpt-4o-mini",
             temperature=0.7,
             max_tokens=100
         )
-        print("✅ Model configured: claude-sonnet-4.5")
+        print("✅ Model configured: gpt-4o-mini")
         
         # Generate session ID
         session_id = generate_session_id()
