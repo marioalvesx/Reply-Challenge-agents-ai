@@ -121,7 +121,7 @@ class UnsupervisedFraudDetector:
         
         # Adjust if needed
         pred_fraud_rate = (scores >= threshold).mean()
-        print(f"  Initial threshold: {threshold:.3f} → fraud rate: {pred_fraud_rate:.1%}")
+        print(f"  Initial threshold: {threshold:.3f}, fraud rate: {pred_fraud_rate:.1%}")
         
         if pred_fraud_rate < self.min_fraud_rate:
             # Lower threshold

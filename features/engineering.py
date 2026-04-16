@@ -139,7 +139,7 @@ class FeatureEngineer:
         return df
     
     def create_network_features(self, transactions_df: pd.DataFrame, 
-                                graph_metrics: Dict[str, Any]) -> pd.DataFrame:
+                                graph_metrics: Dict[str, Any] = None) -> pd.DataFrame:
         """
         Create network/graph features
         
@@ -150,15 +150,21 @@ class FeatureEngineer:
         Returns:
             DataFrame with network features
         """
-        # TODO: Implementar features de rede
-        # - sender_degree_centrality
-        # - sender_pagerank
-        # - recipient_degree_centrality
-        # - is_new_relationship
-        # - previous_transaction_count
-        # - previous_transaction_sum
+        df = transactions_df.copy()
         
-        pass
+        # Relationship history
+        df['sender_tx_to_recipient'] = df.groupby(['sender_id', 'recipient_id']).cumcount()
+        df['is_new_relationship'] = (df['sender_tx_to_recipient'] == 0).astype(int)
+        
+        # Recipient frequency by sender
+        df['recipient_frequency'] = df.groupby('recipient_id')['sender_id'].transform('count')
+        df['sender_unique_recipients_ever'] = df.groupby('sender_id')['recipient_id'].transform('nunique')
+        
+        # Network degree approximation
+        df['sender_degree'] = df.groupby('sender_id')['recipient_id'].transform('nunique')
+        df['recipient_degree'] = df.groupby('recipient_id')['sender_id'].transform('nunique')
+        
+        return df
     
     def create_geospatial_features(self, transactions_df: pd.DataFrame,
                                    locations_df: pd.DataFrame = None) -> pd.DataFrame:
@@ -232,21 +238,25 @@ class FeatureEngineer:
         
         # Start with temporal features
         df = self.create_temporal_features(transactions_df)
-        print(f"  ✓ Temporal features: {len(df.columns)} columns")
+        print(f"  OK Temporal features: {len(df.columns)} columns")
         
         # Aggregation features
         df = self.create_aggregation_features(df)
-        print(f"  ✓ Aggregation features: {len(df.columns)} columns")
+        print(f"  OK Aggregation features: {len(df.columns)} columns")
         
         # User deviation features
         df = self.create_user_deviation_features(df, users_df)
-        print(f"  ✓ User deviation features: {len(df.columns)} columns")
+        print(f"  OK User deviation features: {len(df.columns)} columns")
+        
+        # Network features
+        df = self.create_network_features(df)
+        print(f"  OK Network features: {len(df.columns)} columns")
         
         # Geospatial features
         if locations_df is not None:
             df = self.create_geospatial_features(df, locations_df)
-            print(f"  ✓ Geospatial features: {len(df.columns)} columns")
+            print(f"  OK Geospatial features: {len(df.columns)} columns")
         
-        print(f"✓ Total features: {len(df.columns)}\\n")
+        print(f"Total features: {len(df.columns)}\n")
         
         return df

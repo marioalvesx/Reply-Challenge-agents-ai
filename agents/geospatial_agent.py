@@ -93,21 +93,41 @@ class GeospatialAgent:
         Returns:
             float: Fraud probability [0, 1]
         """
-        # TODO: Implementar detecção de anomalias geoespaciais
-        # 1. Comparar localização de transação com GPS recente
-        # 2. Calcular distância vs perfil do usuário
-        # 3. Detectar impossibilidades físicas (ex: transação em Paris e GPS em São Paulo)
-        # 4. Verificar velocidade de deslocamento
+        # Only for in-person payments
+        tx_type = transaction.get('transaction_type', '')
+        if 'in-person' not in tx_type.lower() and 'cash' not in tx_type.lower():
+            return 0.1  # Not applicable for non-physical transactions
         
-        # Apenas para transações presenciais
-        if transaction.get('transaction_type') != 'in-person payment':
-            return 0.3  # Not applicable
-        
-        # Placeholder: detectar se há dados de localização
+        # If no location data, return neutral
         if 'location' not in transaction or not recent_gps:
-            return 0.4  # No data to verify
+            return 0.3
         
-        return 0.3  # Default
+        risk = 0.1
+        
+        try:
+            # Extract coordinates if available
+            tx_loc = transaction.get('location', {})
+            if isinstance(tx_loc, dict) and 'lat' in tx_loc and 'lng' in tx_loc:
+                tx_lat = float(tx_loc['lat'])
+                tx_lng = float(tx_loc['lng'])
+                
+                # Check distance from recent GPS
+                if 'lat' in recent_gps and 'lng' in recent_gps:
+                    gps_lat = float(recent_gps['lat'])
+                    gps_lng = float(recent_gps['lng'])
+                    
+                    dist_km = self.calculate_distance_km(tx_lat, tx_lng, gps_lat, gps_lng)
+                    
+                    if dist_km > self.distance_threshold_km:
+                        risk += 0.5  # Impossible location
+                    elif dist_km > 100:
+                        risk += 0.3
+                    elif dist_km > 50:
+                        risk += 0.1
+        except:
+            pass
+        
+        return min(0.95, risk)
     
     def extract_features(self, transaction: Dict[str, Any], gps_history: pd.DataFrame = None) -> Dict[str, float]:
         """
