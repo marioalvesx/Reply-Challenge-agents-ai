@@ -10,7 +10,7 @@ from sklearn.model_selection import train_test_split
 from sklearn.metrics import classification_report
 
 
-class FraudDetectionEnsemble:
+class FraudEnsemble:
     """
     Ensemble de modelos para detecção de fraudes
     
