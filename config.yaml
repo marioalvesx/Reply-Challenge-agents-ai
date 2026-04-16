@@ -1,0 +1,129 @@
+# Model Configuration
+model:
+  provider: "openrouter"
+  model_id: "gpt-4o-mini" # ou outro modelo compatível
+  temperature: 0.7
+  max_tokens: 1000
+
+# Agent Configuration
+agents:
+  orchestrator:
+    enabled: true
+    weight: 1.0
+
+  transaction_pattern:
+    enabled: true
+    weight: 0.25
+
+  temporal_behavior:
+    enabled: true
+    weight: 0.20
+
+  geospatial:
+    enabled: true
+    weight: 0.15
+
+  network_analysis:
+    enabled: true
+    weight: 0.25
+
+  communication:
+    enabled: true
+    weight: 0.15
+
+# Feature Engineering
+features:
+  temporal_windows: [1, 24, 168, 720] # hours: 1h, 1d, 1w, 1m
+  aggregations: ["count", "sum", "mean", "std", "max", "min"]
+
+  # Velocity features
+  velocity_enabled: true
+  velocity_windows: [1, 6, 24, 168] # hours
+
+  # Network features
+  network_enabled: true
+  graph_metrics: ["degree", "centrality", "clustering"]
+
+  # Geospatial features
+  geospatial_enabled: true
+  distance_threshold_km: 50 # impossibility threshold
+
+  # NLP features
+  nlp_enabled: true
+  nlp_models: ["sentiment", "keywords", "urgency"]
+
+# Model Training
+training:
+  validation_split: 0.2
+  random_state: 42
+  cross_validation_folds: 5
+
+  # Class imbalance handling
+  handle_imbalance: true
+  imbalance_method: "smote" # options: smote, adasyn, class_weight
+
+  # Ensemble configuration
+  ensemble:
+    enabled: true
+    models:
+      - name: "xgboost"
+        enabled: true
+        weight: 0.3
+      - name: "lightgbm"
+        enabled: true
+        weight: 0.3
+      - name: "catboost"
+        enabled: true
+        weight: 0.2
+      - name: "random_forest"
+        enabled: true
+        weight: 0.2
+
+# Fraud Detection
+detection:
+  # Minimum detection rate (15% required)
+  min_fraud_detection_rate: 0.15
+
+  # Decision threshold (will be optimized)
+  default_threshold: 0.5
+  optimize_threshold: true
+
+  # Asymmetric costs
+  cost_fp: 1 # Cost of false positive
+  cost_fn: 5 # Cost of false negative
+
+  # Thresholds per transaction type (can be tuned)
+  thresholds_by_type:
+    bank_transfer: 0.5
+    in-person payment: 0.5
+    e-commerce: 0.5
+    direct debit: 0.5
+    withdrawal: 0.5
+
+# Adaptation (between levels)
+adaptation:
+  enabled: true
+
+  # Transfer learning
+  transfer_learning: true
+  reuse_features: true
+  reuse_weights: true
+
+  # Drift detection
+  drift_detection: true
+  drift_threshold: 0.1
+
+  # Incremental learning
+  incremental_learning: false # pode ser habilitado se necessário
+
+# Output Configuration
+output:
+  format: "txt"
+  encoding: "ascii"
+  one_per_line: true
+
+# Logging
+logging:
+  level: "INFO" # DEBUG, INFO, WARNING, ERROR
+  log_file: "logs/fraud_detection.log"
+  console_output: true
