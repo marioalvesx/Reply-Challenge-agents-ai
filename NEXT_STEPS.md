@@ -1,8 +1,8 @@
 # Próximos Passos - Implementação Completa
 
-## ✅ Setup Concluído!
+## ✅ Setup & Agent Implementation Concluído!
 
-Estrutura de projeto criada com sucesso! Agora siga estes passos:
+Estrutura de projeto criada e agentes implementados com sucesso! Agora siga estes passos:
 
 ---
 
@@ -211,15 +211,19 @@ Antes de submeter cada nível:
 ### Fase 1 (Mínimo Viável - Nível 1)
 
 1. ✅ Feature engineering básico (temporal, aggregations)
-2. ✅ Treinar XGBoost simples
-3. ✅ Pipeline completo de treino → predict → output
-4. ✅ Submeter Nível 1
+2. ✅ Treinar XGBoost simples + Ensemble (LightGBM, CatBoost, RF)
+3. ✅ SMOTE para balanceamento de classe
+4. ✅ Pipeline completo de treino → predict → output
+5. ✅ Agents especializados (Transaction, Temporal, Geospatial, Network, Communication)
+6. ⏳ Testar em Level 2 (dados já carregados em data/raw/level2/)
+7. ⏳ Otimizar threshold com custos assimétricos
+8. ⏳ Submeter Nível 1
 
 ### Fase 2 (Melhorias - Níveis 2-3)
 
 1. ✅ Adicionar LightGBM e CatBoost ao ensemble
 2. ✅ Feature engineering avançado (network, geo)
-3. ✅ Otimização de threshold
+3. ⏳ Otimização de threshold
 4. ✅ Agentes especializados funcionais
 
 ### Fase 3 (Refinamento - Níveis 4-5)

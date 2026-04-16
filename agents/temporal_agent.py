@@ -37,27 +37,25 @@ class TemporalBehaviorAgent:
         Args:
             transactions_df: DataFrame with transaction history
         """
-        # TODO: Implementar construção de perfis temporais
-        # 1. Extrair hora, dia da semana, mês
-        # 2. Identificar padrões típicos por usuário
-        # 3. Calcular distribuições horárias
-        # 4. Identificar janelas de atividade normal
-        
         print("Building temporal behavior profiles...")
         
-        # Converter timestamp para datetime se necessário
-        if 'timestamp' in transactions_df.columns:
-            transactions_df['hour'] = pd.to_datetime(transactions_df['timestamp']).dt.hour
-            transactions_df['day_of_week'] = pd.to_datetime(transactions_df['timestamp']).dt.dayofweek
+        # Convert timestamp to datetime
+        df = transactions_df.copy()
+        df['datetime'] = pd.to_datetime(df['timestamp'])
+        df['hour'] = df['datetime'].dt.hour
+        df['day_of_week'] = df['datetime'].dt.dayofweek
+        
+        # Build profiles by user
+        for sender_id in df['sender_id'].unique():
+            user_txs = df[df['sender_id'] == sender_id]
+            hours = user_txs['hour'].tolist()
             
-            # Agrupar por usuário e calcular padrões
-            user_temporal = transactions_df.groupby('sender_id').agg({
-                'hour': lambda x: list(x),
-                'day_of_week': lambda x: list(x)
-            })
-            
-            self.user_temporal_profiles = user_temporal.to_dict('index')
-            
+            self.user_temporal_profiles[sender_id] = {
+                'common_hours': list(set(hours)),
+                'weekday_pref': user_txs[user_txs['day_of_week'] < 5].shape[0] > user_txs[user_txs['day_of_week'] >= 5].shape[0],
+                'is_night_user': sum(1 for h in hours if 22 <= h or h < 6) > len(hours) * 0.3
+            }
+        
         print(f"✓ Built temporal profiles for {len(self.user_temporal_profiles)} users")
     
     def predict(self, transaction: Dict[str, Any]) -> float:
@@ -70,31 +68,34 @@ class TemporalBehaviorAgent:
         Returns:
             float: Fraud probability [0, 1]
         """
-        # TODO: Implementar detecção de anomalias temporais
-        # 1. Verificar se horário é atípico para usuário
-        # 2. Detectar múltiplas transações em curto período
-        # 3. Verificar dia da semana vs padrão
-        # 4. Calcular score de risco temporal
-        
         sender_id = transaction.get('sender_id')
         timestamp = transaction.get('timestamp')
         
         if not timestamp:
             return 0.5
         
-        # Placeholder: detectar transações noturnas (00:00 - 05:00)
         try:
             dt = pd.to_datetime(timestamp)
             hour = dt.hour
             
-            if hour >= 0 and hour < 5:
-                return 0.7  # Higher risk for late night transactions
-            elif hour >= 22 or hour < 7:
-                return 0.5  # Medium risk
+            # Base risk from hour
+            risk = 0.1
+            if 0 <= hour < 6:
+                risk += 0.3
+            elif 22 <= hour < 24:
+                risk += 0.2
+            
+            # Check user profile
+            if sender_id in self.user_temporal_profiles:
+                profile = self.user_temporal_profiles[sender_id]
+                if hour not in profile['common_hours']:
+                    risk += 0.15
+                if not profile['is_night_user'] and (22 <= hour or hour < 6):
+                    risk += 0.1
+            
+            return min(0.95, risk)
         except:
-            pass
-        
-        return 0.3  # Default
+            return 0.5
     
     def extract_features(self, transaction: Dict[str, Any]) -> Dict[str, float]:
         """

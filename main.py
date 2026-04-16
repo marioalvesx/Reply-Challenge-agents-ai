@@ -39,13 +39,13 @@ def train_mode(level, input_file, config):
     import json
     from pathlib import Path
     from features.engineering import FeatureEngineer
-    from models.ensemble import FraudEnsemble
+    from models.ensemble import FraudDetectionEnsemble
     from utils.metrics import find_optimal_threshold
     
     # Load data
     print("Loading data...")
     transactions = pd.read_csv(input_file)
-    print(f"  ✓ Transactions: {len(transactions)} rows")
+    print(f"  OK Transactions: {len(transactions)} rows")
     
     # Load auxiliary data
     data_dir = Path(input_file).parent
@@ -55,12 +55,12 @@ def train_mode(level, input_file, config):
     if (data_dir / 'locations.json').exists():
         with open(data_dir / 'locations.json') as f:
             locations = pd.DataFrame(json.load(f))
-        print(f"  ✓ Locations: {len(locations)} rows")
+        print(f"  OK Locations: {len(locations)} rows")
     
     if (data_dir / 'users.json').exists():
         with open(data_dir / 'users.json') as f:
             users = pd.DataFrame(json.load(f))
-        print(f"  ✓ Users: {len(users)} rows")
+        print(f"  OK Users: {len(users)} rows")
     
     print()
     
@@ -92,7 +92,7 @@ def train_mode(level, input_file, config):
         print(f"Fraud rate: {y.mean():.2%}\n")
         
         # Train ensemble
-        ensemble = FraudEnsemble(config)
+        ensemble = FraudDetectionEnsemble(config)
         metrics = ensemble.train(X, y)
         
         # Find optimal threshold
@@ -104,10 +104,10 @@ def train_mode(level, input_file, config):
         models_dir = Path('models/trained')
         models_dir.mkdir(parents=True, exist_ok=True)
         ensemble.save(models_dir / f'level{level}_ensemble.pkl')
-        print(f"\n✓ Models saved to {models_dir}/level{level}_ensemble.pkl")
+        print(f"\nModels saved to {models_dir}/level{level}_ensemble.pkl")
     else:
         # Unsupervised learning
-        print("⚠️  No labels found - using unsupervised anomaly detection")
+        print("WARNING: No labels found - using unsupervised anomaly detection")
         print("   Feature engineering complete. Use predict mode to detect fraud.\n")
     
     return True
@@ -140,17 +140,17 @@ def predict_mode(level, input_file, output_file, config):
     use_supervised = models_path.exists()
     
     if use_supervised:
-        from models.ensemble import FraudEnsemble
-        ensemble = FraudEnsemble(config)
+        from models.ensemble import FraudDetectionEnsemble
+        ensemble = FraudDetectionEnsemble(config)
         ensemble.load(models_path)
-        print(f"✓ Loaded supervised model from {models_path}\n")
+        print(f"Loaded supervised model from {models_path}\n")
     else:
-        print("⚠️  No trained model found - using unsupervised detection\n")
+        print("WARNING: No trained model found - using unsupervised detection\n")
     
     # Load data
     print("\nLoading data...")
     transactions = pd.read_csv(input_file)
-    print(f"  ✓ Transactions: {len(transactions)} rows")
+    print(f"  OK Transactions: {len(transactions)} rows")
     
     # Load auxiliary data
     data_dir = Path(input_file).parent
@@ -160,12 +160,12 @@ def predict_mode(level, input_file, output_file, config):
     if (data_dir / 'locations.json').exists():
         with open(data_dir / 'locations.json') as f:
             locations = pd.DataFrame(json.load(f))
-        print(f"  ✓ Locations: {len(locations)} rows")
+        print(f"  OK Locations: {len(locations)} rows")
     
     if (data_dir / 'users.json').exists():
         with open(data_dir / 'users.json') as f:
             users = pd.DataFrame(json.load(f))
-        print(f"  ✓ Users: {len(users)} rows")
+        print(f"  OK Users: {len(users)} rows")
     
     print()
     
@@ -200,7 +200,7 @@ def predict_mode(level, input_file, output_file, config):
         results = detector.detect_fraud(features_df)
         fraud_ids = results[results['is_fraud'] == 1]['transaction_id'].tolist()
     
-    print(f"\n✓ Detected {len(fraud_ids)} potential frauds ({len(fraud_ids)/len(features_df):.1%})")
+    print(f"\nDetected {len(fraud_ids)} potential frauds ({len(fraud_ids)/len(features_df):.1%})")
     
     # Save output in required format (one ID per line, ASCII)
     output_path = Path(output_file)
@@ -210,7 +210,7 @@ def predict_mode(level, input_file, output_file, config):
         for txn_id in fraud_ids:
             f.write(f"{txn_id}\n")
     
-    print(f"✓ Output saved to {output_path}")
+    print(f"Output saved to {output_path}")
     
     return True
     print("Next steps:")
@@ -243,7 +243,7 @@ def validate_mode(input_file, total_transactions=None):
     is_valid, error = validate_output_format(input_file)
     
     if not is_valid:
-        print(f"\n❌ VALIDATION FAILED: {error}")
+        print(f"\nERROR: VALIDATION FAILED: {error}")
         return False
     
     # Validate percentage if total provided
@@ -251,12 +251,12 @@ def validate_mode(input_file, total_transactions=None):
         is_valid, percentage, error = validate_percentage_range(input_file, total_transactions)
         
         if not is_valid:
-            print(f"\n❌ VALIDATION FAILED: {error}")
+            print(f"\nERROR: VALIDATION FAILED: {error}")
             return False
     
-    print(f"\n✅ VALIDATION PASSED")
+    print(f"\nVALIDATION PASSED")
     print(f"\nOutput file is ready for submission!")
-    print(f"\n⚠️  REMEMBER: Only 1 submission per level - first submission is FINAL!")
+    print(f"\nWARNING: REMEMBER: Only 1 submission per level - first submission is FINAL!")
     
     return True
 
@@ -311,23 +311,23 @@ Examples:
     
     # Validate arguments
     if args.mode in ["train", "predict"] and not args.level:
-        print("❌ Error: --level required for train and predict modes")
+        print("ERROR: --level required for train and predict modes")
         sys.exit(1)
     
     if args.mode == "predict" and not args.output:
-        print("❌ Error: --output required for predict mode")
+        print("ERROR: --output required for predict mode")
         sys.exit(1)
     
     # Check input file exists
     if not Path(args.input).exists():
-        print(f"❌ Error: Input file not found: {args.input}")
+        print(f"ERROR: Input file not found: {args.input}")
         sys.exit(1)
     
     # Load configuration
     try:
         config = load_config()
     except Exception as e:
-        print(f"❌ Error loading config.yaml: {e}")
+        print(f"ERROR: Error loading config.yaml: {e}")
         sys.exit(1)
     
     # Execute mode
@@ -342,14 +342,14 @@ Examples:
             success = validate_mode(args.input, args.total)
         
         if success:
-            print(f"\n✅ {args.mode.upper()} completed successfully!")
+            print(f"\n{args.mode.upper()} completed successfully!")
             sys.exit(0)
         else:
-            print(f"\n❌ {args.mode.upper()} failed!")
+            print(f"\n{args.mode.upper()} failed!")
             sys.exit(1)
             
     except Exception as e:
-        print(f"\n❌ Error: {e}")
+        print(f"\nERROR: Error: {e}")
         import traceback
         traceback.print_exc()
         sys.exit(1)

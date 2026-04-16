@@ -39,7 +39,7 @@ class FraudDetectionEnsemble:
         ensemble_config = self.config.get('training', {}).get('ensemble', {})
         
         if not ensemble_config.get('enabled', True):
-            print("⚠️  Ensemble disabled in config")
+            print("WARNING: Ensemble disabled in config")
             return
         
         for model_config in ensemble_config.get('models', []):
@@ -93,14 +93,14 @@ class FraudDetectionEnsemble:
                     self.model_weights['random_forest'] = weight
                     
             except ImportError:
-                print(f"⚠️  Could not import {model_name}, skipping...")
+                print(f"WARNING: Could not import {model_name}, skipping...")
         
         # Normalize weights
         total_weight = sum(self.model_weights.values())
         if total_weight > 0:
             self.model_weights = {k: v/total_weight for k, v in self.model_weights.items()}
         
-        print(f"✓ Initialized {len(self.models)} models")
+        print(f"Initialized {len(self.models)} models")
     
     def train(self, X: pd.DataFrame, y: pd.Series) -> Dict[str, Any]:
         """
@@ -119,10 +119,20 @@ class FraudDetectionEnsemble:
         self._initialize_models()
         
         # Handle class imbalance
+        X_train, y_train = X, y
         imbalance_config = self.config.get('training', {})
         if imbalance_config.get('handle_imbalance', True):
-            # TODO: Implementar SMOTE ou class_weight
-            pass
+            method = imbalance_config.get('imbalance_method', 'smote')
+            if method == 'smote':
+                try:
+                    from imblearn.over_sampling import SMOTE
+                    smote = SMOTE(random_state=42, k_neighbors=3)
+                    X_train, y_train = smote.fit_resample(X, y)
+                    print(f"  OK Applied SMOTE: {y.value_counts().to_dict()} -> {pd.Series(y_train).value_counts().to_dict()}")
+                except:
+                    print("  WARNING: SMOTE failed, using class weights instead")
+            else:
+                print(f"  ℹ️  Using class_weight=balanced approach")
         
         # Train each model
         metrics = {}
@@ -130,20 +140,21 @@ class FraudDetectionEnsemble:
             print(f"  Training {model_name}...")
             
             try:
-                model.fit(X, y)
+                model.fit(X_train, y_train)
                 
                 # Calculate training metrics
                 y_pred = model.predict(X)
                 y_proba = model.predict_proba(X)[:, 1]
                 
-                from sklearn.metrics import accuracy_score, precision_score, recall_score
+                from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
                 metrics[model_name] = {
                     'accuracy': accuracy_score(y, y_pred),
                     'precision': precision_score(y, y_pred, zero_division=0),
-                    'recall': recall_score(y, y_pred, zero_division=0)
+                    'recall': recall_score(y, y_pred, zero_division=0),
+                    'f1': f1_score(y, y_pred, zero_division=0)
                 }
                 
-                print(f"    ✓ {model_name}: Accuracy={metrics[model_name]['accuracy']:.3f}")
+                print(f"    OK {model_name}: Acc={metrics[model_name]['accuracy']:.3f} F1={metrics[model_name]['f1']:.3f}")
                 
             except Exception as e:
                 print(f"    ✗ {model_name} failed: {e}")
@@ -223,7 +234,7 @@ class FraudDetectionEnsemble:
         
         self.threshold = optimal_threshold
         
-        print(f"✓ Optimized threshold: {optimal_threshold:.3f} (cost: {min_cost:.2f})")
+        print(f"Optimized threshold: {optimal_threshold:.3f} (cost: {min_cost:.2f})")
         
         return optimal_threshold, min_cost
     
@@ -237,6 +248,48 @@ class FraudDetectionEnsemble:
         Returns:
             DataFrame with feature importances
         """
-        # TODO: Implementar agregação de feature importance
-        # de múltiplos modelos
-        pass
+        importances_dict = {}
+        
+        for model_name, model in self.models.items():
+            try:
+                if hasattr(model, 'feature_importances_'):
+                    importances_dict[model_name] = model.feature_importances_
+            except:
+                pass
+        
+        if not importances_dict:
+            return pd.DataFrame()
+        
+        # Average importances across models
+        importance_df = pd.DataFrame(importances_dict)
+        importance_df['feature'] = self.feature_names
+        importance_df['avg_importance'] = importance_df.iloc[:, :-1].mean(axis=1)
+        importance_df = importance_df.sort_values('avg_importance', ascending=False).head(top_n)
+        
+        return importance_df[['feature', 'avg_importance']]
+    
+    def save(self, path):
+        """Save ensemble to disk"""
+        import pickle
+        data = {
+            'models': self.models,
+            'weights': self.model_weights,
+            'threshold': self.threshold,
+            'features': self.feature_names,
+            'config': self.config
+        }
+        with open(path, 'wb') as f:
+            pickle.dump(data, f)
+        print(f"Ensemble saved to {path}")
+    
+    def load(self, path):
+        """Load ensemble from disk"""
+        import pickle
+        with open(path, 'rb') as f:
+            data = pickle.load(f)
+        self.models = data['models']
+        self.model_weights = data['weights']
+        self.threshold = data['threshold']
+        self.feature_names = data['features']
+        self.config = data['config']
+        print(f"Ensemble loaded from {path}")

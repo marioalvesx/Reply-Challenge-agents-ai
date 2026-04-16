@@ -37,23 +37,26 @@ class TransactionPatternAgent:
         Args:
             transactions_df: DataFrame with transaction history
         """
-        # TODO: Implementar construção de perfis
-        # 1. Agrupar por sender_id
-        # 2. Calcular estatísticas: média, std, max, min valores
-        # 3. Calcular frequência típica
-        # 4. Identificar merchants/categorias habituais
-        # 5. Salvar perfis em self.user_profiles
-        
         print("Building user transaction profiles...")
         
-        # Exemplo de agregações
-        user_stats = transactions_df.groupby('sender_id').agg({
-            'amount': ['mean', 'std', 'max', 'min', 'count'],
-            'transaction_type': lambda x: x.mode()[0] if len(x) > 0 else None,
-        })
+        # Convert timestamp to datetime
+        df = transactions_df.copy()
+        df['datetime'] = pd.to_datetime(df['timestamp'])
         
-        # TODO: Armazenar perfis mais detalhados
-        self.user_profiles = user_stats.to_dict('index')
+        # Aggregate statistics by sender
+        for sender_id in df['sender_id'].unique():
+            user_txs = df[df['sender_id'] == sender_id]
+            
+            self.user_profiles[sender_id] = {
+                'amount_mean': user_txs['amount'].mean(),
+                'amount_std': user_txs['amount'].std() or 0,
+                'amount_max': user_txs['amount'].max(),
+                'amount_min': user_txs['amount'].min(),
+                'tx_count': len(user_txs),
+                'common_tx_type': user_txs['transaction_type'].mode()[0] if len(user_txs) > 0 else None,
+                'common_hour': user_txs['datetime'].dt.hour.mode()[0] if len(user_txs) > 0 else 12,
+                'unique_recipients': user_txs['recipient_id'].nunique()
+            }
         
         print(f"✓ Built profiles for {len(self.user_profiles)} users")
     
@@ -67,27 +70,32 @@ class TransactionPatternAgent:
         Returns:
             float: Fraud probability [0, 1]
         """
-        # TODO: Implementar detecção de anomalias
-        # 1. Comparar valor com perfil do usuário
-        # 2. Verificar frequência recente
-        # 3. Detectar sequências suspeitas
-        # 4. Verificar saldo vs histórico
-        # 5. Retornar score de risco
-        
         sender_id = transaction.get('sender_id')
         amount = transaction.get('amount', 0)
+        tx_type = transaction.get('transaction_type')
         
-        # Placeholder: detectar valores muito altos
-        if sender_id in self.user_profiles:
-            profile = self.user_profiles[sender_id]
-            avg_amount = profile.get('amount', {}).get('mean', 0)
-            
-            if avg_amount > 0 and amount > 3 * avg_amount:
-                return 0.8  # High risk
-            elif avg_amount > 0 and amount > 2 * avg_amount:
-                return 0.6  # Medium risk
+        if sender_id not in self.user_profiles:
+            return 0.5  # Unknown user - neutral
         
-        return 0.3  # Default low risk
+        profile = self.user_profiles[sender_id]
+        risk_score = 0.0
+        
+        # Amount deviation
+        avg_amount = profile['amount_mean']
+        if avg_amount > 0:
+            ratio = amount / avg_amount
+            if ratio > 3:
+                risk_score += 0.3
+            elif ratio > 2:
+                risk_score += 0.2
+            elif ratio > 1.5:
+                risk_score += 0.1
+        
+        # Transaction type change
+        if tx_type != profile['common_tx_type']:
+            risk_score += 0.05
+        
+        return min(0.95, risk_score)
     
     def extract_features(self, transaction: Dict[str, Any]) -> Dict[str, float]:
         """
